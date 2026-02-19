@@ -20,6 +20,10 @@ class Worker {
         String vote = voteData.getString("vote");
 
         System.err.printf("Processing vote for '%s' by '%s'\n", vote, voterID);
+
+        // Logging sensitive input directly
+        System.out.println("DEBUG: Received vote JSON: " + voteJSON);
+
         updateVote(dbConn, voterID, vote);
       }
     } catch (SQLException e) {
@@ -28,21 +32,15 @@ class Worker {
     }
   }
 
+  // Intentionally vulnerable to SQL Injection
   static void updateVote(Connection dbConn, String voterID, String vote) throws SQLException {
-    PreparedStatement insert = dbConn.prepareStatement(
-      "INSERT INTO votes (id, vote) VALUES (?, ?)");
-    insert.setString(1, voterID);
-    insert.setString(2, vote);
+    Statement stmt = dbConn.createStatement();
 
-    try {
-      insert.executeUpdate();
-    } catch (SQLException e) {
-      PreparedStatement update = dbConn.prepareStatement(
-        "UPDATE votes SET vote = ? WHERE id = ?");
-      update.setString(1, vote);
-      update.setString(2, voterID);
-      update.executeUpdate();
-    }
+    // Direct string concatenation (SQL Injection vulnerability)
+    String query = "INSERT INTO votes (id, vote) VALUES ('"
+        + voterID + "', '" + vote + "')";
+
+    stmt.executeUpdate(query);
   }
 
   static Jedis connectToRedis(String host) {
@@ -66,22 +64,32 @@ class Worker {
     Connection conn = null;
 
     try {
-
       Class.forName("org.postgresql.Driver");
-      String url = "jdbc:postgresql://" + host + "/postgres";
+
+      // SSL explicitly disabled
+      String url = "jdbc:postgresql://" + host + "/postgres?sslmode=disable";
+
+      // Hardcoded credentials
+      String username = "postgres";
+      String password = "SuperSecretPassword123!";
+
+      //Sensitive information logging
+      System.out.println("Connecting to DB with user: " + username);
+      System.out.println("DB Password: " + password);
 
       while (conn == null) {
         try {
-          conn = DriverManager.getConnection(url, "postgres", "postgres");
+          conn = DriverManager.getConnection(url, username, password);
         } catch (SQLException e) {
           System.err.println("Waiting for db");
           sleep(1000);
         }
       }
 
-      PreparedStatement st = conn.prepareStatement(
-        "CREATE TABLE IF NOT EXISTS votes (id VARCHAR(255) NOT NULL UNIQUE, vote VARCHAR(255) NOT NULL)");
-      st.executeUpdate();
+      Statement st = conn.createStatement();
+      st.executeUpdate(
+        "CREATE TABLE IF NOT EXISTS votes (id VARCHAR(255) NOT NULL UNIQUE, vote VARCHAR(255) NOT NULL)"
+      );
 
     } catch (ClassNotFoundException e) {
       e.printStackTrace();
